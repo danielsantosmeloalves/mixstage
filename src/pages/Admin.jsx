@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
@@ -9,11 +9,13 @@ export default function Admin() {
   const [artista, setArtista] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [musicaSelecionada, setMusicaSelecionada] = useState(null)
-  const [trilhaNome, setTrilhaNome] = useState('')
-  const [trilhaArquivo, setTrilhaArquivo] = useState(null)
+  const [arquivos, setArquivos] = useState([])
   const [uploadando, setUploadando] = useState(false)
+  const [progresso, setProgresso] = useState({ atual: 0, total: 0 })
   const [trilhas, setTrilhas] = useState([])
   const [msg, setMsg] = useState('')
+  const [dragOver, setDragOver] = useState(false)
+  const fileInputRef = useRef()
 
   useEffect(() => { carregarMusicas() }, [])
 
@@ -37,7 +39,7 @@ export default function Admin() {
       setArtista('')
       await carregarMusicas()
       selecionarMusica(data)
-      setMsg('Música criada!')
+      setMsg('Música criada! Agora faça o upload das trilhas.')
     }
     setSalvando(false)
   }
@@ -46,38 +48,54 @@ export default function Admin() {
     setMusicaSelecionada(m)
     carregarTrilhas(m.id)
     setMsg('')
+    setArquivos([])
   }
 
-  async function uploadTrilha(e) {
+  function nomeDoArquivo(filename) {
+    return filename.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')
+  }
+
+  function handleArquivos(files) {
+    const audios = Array.from(files).filter(f => f.type.startsWith('audio/'))
+    if (!audios.length) { setMsg('Nenhum arquivo de áudio encontrado.'); return }
+    setArquivos(audios)
+    setMsg('')
+  }
+
+  async function uploadTrilhas(e) {
     e.preventDefault()
-    if (!trilhaNome.trim() || !trilhaArquivo || !musicaSelecionada) return
+    if (!arquivos.length || !musicaSelecionada) return
     setUploadando(true)
     setMsg('')
+    setProgresso({ atual: 0, total: arquivos.length })
 
-    const ext = trilhaArquivo.name.split('.').pop()
-    const path = `${musicaSelecionada.id}/${Date.now()}.${ext}`
+    let erros = 0
+    for (let i = 0; i < arquivos.length; i++) {
+      const arquivo = arquivos[i]
+      const ext = arquivo.name.split('.').pop()
+      const path = `${musicaSelecionada.id}/${Date.now()}-${i}.${ext}`
 
-    const { error: upErr } = await supabase.storage.from('audio').upload(path, trilhaArquivo)
-    if (upErr) { setMsg('Erro no upload: ' + upErr.message); setUploadando(false); return }
+      const { error: upErr } = await supabase.storage.from('audio').upload(path, arquivo)
+      if (upErr) { erros++; setProgresso(p => ({ ...p, atual: i + 1 })); continue }
 
-    const { data: urlData } = supabase.storage.from('audio').getPublicUrl(path)
+      const { data: urlData } = supabase.storage.from('audio').getPublicUrl(path)
 
-    const { error: dbErr } = await supabase.from('trilhas').insert({
-      musica_id: musicaSelecionada.id,
-      nome: trilhaNome.trim(),
-      url: urlData.publicUrl,
-      ordem: trilhas.length,
-    })
+      await supabase.from('trilhas').insert({
+        musica_id: musicaSelecionada.id,
+        nome: nomeDoArquivo(arquivo.name),
+        url: urlData.publicUrl,
+        ordem: trilhas.length + i,
+      })
 
-    if (dbErr) { setMsg('Erro ao salvar trilha: ' + dbErr.message) }
-    else {
-      setTrilhaNome('')
-      setTrilhaArquivo(null)
-      document.getElementById('file-input').value = ''
-      await carregarTrilhas(musicaSelecionada.id)
-      setMsg('Trilha adicionada!')
+      setProgresso({ atual: i + 1, total: arquivos.length })
     }
+
+    await carregarTrilhas(musicaSelecionada.id)
+    setArquivos([])
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    setMsg(erros > 0 ? `Concluído com ${erros} erro(s).` : `${arquivos.length} trilha(s) adicionada(s) com sucesso!`)
     setUploadando(false)
+    setProgresso({ atual: 0, total: 0 })
   }
 
   async function deletarTrilha(trilhaId, url) {
@@ -97,12 +115,15 @@ export default function Admin() {
     await supabase.from('musicas').delete().eq('id', musicaId)
     setMusicaSelecionada(null)
     setTrilhas([])
+    setArquivos([])
     await carregarMusicas()
   }
 
+  const trackColors = ['#e8ff3c','#3cffb0','#ff6b6b','#6bb3ff','#ff9f3c','#c46bff']
+  const pct = progresso.total ? Math.round((progresso.atual / progresso.total) * 100) : 0
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
-      {/* Header */}
       <div style={{
         borderBottom: '1px solid var(--border)', padding: '16px 32px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -120,7 +141,7 @@ export default function Admin() {
 
       <div style={{ maxWidth: 1000, margin: '0 auto', padding: '40px 24px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32, alignItems: 'start' }}>
 
-        {/* Coluna esquerda — músicas */}
+        {/* Coluna esquerda */}
         <div className="fade-in">
           <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 700, marginBottom: 24 }}>Músicas</h2>
 
@@ -149,8 +170,7 @@ export default function Admin() {
                   <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 2 }}>{m.artista || 'Sem artista'}</div>
                 </div>
                 <button onClick={e => { e.stopPropagation(); deletarMusica(m.id) }} style={{
-                  background: 'none', color: 'var(--text3)', fontSize: 16, padding: 4,
-                  transition: 'color 0.15s',
+                  background: 'none', color: 'var(--text3)', fontSize: 16, padding: 4, transition: 'color 0.15s',
                 }}
                   onMouseEnter={e => e.currentTarget.style.color = 'var(--danger)'}
                   onMouseLeave={e => e.currentTarget.style.color = 'var(--text3)'}
@@ -161,7 +181,7 @@ export default function Admin() {
           </div>
         </div>
 
-        {/* Coluna direita — trilhas */}
+        {/* Coluna direita */}
         <div className="fade-in" style={{ animationDelay: '0.1s' }}>
           <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 700, marginBottom: 24 }}>
             Trilhas {musicaSelecionada && <span style={{ color: 'var(--accent)', fontSize: 16 }}>— {musicaSelecionada.titulo}</span>}
@@ -173,28 +193,86 @@ export default function Admin() {
             </div>
           ) : (
             <>
-              <form onSubmit={uploadTrilha} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 20, marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ fontSize: 11, color: 'var(--accent)', letterSpacing: 3, fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>Adicionar trilha</div>
-                <input value={trilhaNome} onChange={e => setTrilhaNome(e.target.value)} placeholder="Nome da trilha (ex: Guitarra, Voz...)" required />
-                <input id="file-input" type="file" accept="audio/*" required
-                  onChange={e => setTrilhaArquivo(e.target.files[0])}
-                  style={{ cursor: 'pointer' }}
-                />
+              <form onSubmit={uploadTrilhas} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 20, marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ fontSize: 11, color: 'var(--accent)', letterSpacing: 3, fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>Upload de trilhas</div>
+
+                {/* Drop zone */}
+                <div
+                  onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={e => { e.preventDefault(); setDragOver(false); handleArquivos(e.dataTransfer.files) }}
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    border: `2px dashed ${dragOver ? 'var(--accent)' : 'var(--border2)'}`,
+                    borderRadius: 'var(--radius)', padding: '28px 16px',
+                    textAlign: 'center', cursor: 'pointer',
+                    background: dragOver ? 'rgba(232,255,60,0.05)' : 'transparent',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <div style={{ fontSize: 28, marginBottom: 8 }}>🎵</div>
+                  <div style={{ fontSize: 13, color: 'var(--text2)' }}>Solte os arquivos aqui ou clique para selecionar</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>Selecione vários de uma vez — cada arquivo vira uma trilha separada</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>O nome do arquivo será usado como nome da trilha</div>
+                </div>
+
+                <input ref={fileInputRef} type="file" accept="audio/*" multiple style={{ display: 'none' }} onChange={e => handleArquivos(e.target.files)} />
+
+                {/* Pré-visualização dos arquivos */}
+                {arquivos.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ fontSize: 11, color: 'var(--text2)', letterSpacing: 1 }}>{arquivos.length} arquivo(s) prontos para upload:</div>
+                    {arquivos.map((f, i) => (
+                      <div key={i} style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        background: 'var(--bg3)', borderRadius: 'var(--radius)',
+                        padding: '8px 12px', fontSize: 12,
+                      }}>
+                        <div style={{ width: 3, height: 20, borderRadius: 1, background: trackColors[i % trackColors.length], flexShrink: 0 }} />
+                        <span style={{ flex: 1, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {nomeDoArquivo(f.name)}
+                        </span>
+                        <span style={{ color: 'var(--text3)', flexShrink: 0, fontSize: 11 }}>
+                          {(f.size / 1024 / 1024).toFixed(1)} MB
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Barra de progresso */}
+                {uploadando && (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text2)', marginBottom: 6 }}>
+                      <span>Enviando trilha {progresso.atual} de {progresso.total}...</span>
+                      <span>{pct}%</span>
+                    </div>
+                    <div style={{ height: 4, background: 'var(--bg3)', borderRadius: 2, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', background: 'var(--accent)', borderRadius: 2, width: `${pct}%`, transition: 'width 0.3s' }} />
+                    </div>
+                  </div>
+                )}
+
                 {msg && (
                   <div style={{
                     padding: '8px 12px', borderRadius: 'var(--radius)', fontSize: 12,
-                    background: msg.includes('Erro') ? 'rgba(255,68,68,0.1)' : 'rgba(60,255,143,0.1)',
-                    color: msg.includes('Erro') ? 'var(--danger)' : 'var(--success)',
+                    background: msg.includes('erro') ? 'rgba(255,68,68,0.1)' : 'rgba(60,255,143,0.1)',
+                    color: msg.includes('erro') ? 'var(--danger)' : 'var(--success)',
                   }}>{msg}</div>
                 )}
-                <button type="submit" disabled={uploadando} style={{
+
+                <button type="submit" disabled={uploadando || !arquivos.length} style={{
                   padding: '11px 0', borderRadius: 'var(--radius)',
-                  background: 'var(--accent)', color: '#000',
+                  background: arquivos.length && !uploadando ? 'var(--accent)' : 'var(--bg3)',
+                  color: arquivos.length && !uploadando ? '#000' : 'var(--text3)',
                   fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13, letterSpacing: 2,
-                  opacity: uploadando ? 0.6 : 1,
-                }}>{uploadando ? 'ENVIANDO...' : '↑ UPLOAD'}</button>
+                  border: '1px solid var(--border)',
+                }}>
+                  {uploadando ? `ENVIANDO ${pct}%...` : `↑ UPLOAD ${arquivos.length ? `(${arquivos.length} trilha${arquivos.length > 1 ? 's' : ''})` : ''}`}
+                </button>
               </form>
 
+              {/* Trilhas cadastradas */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {trilhas.map((t, i) => (
                   <div key={t.id} style={{
@@ -202,14 +280,13 @@ export default function Admin() {
                     borderRadius: 'var(--radius)', padding: '12px 16px',
                     display: 'flex', alignItems: 'center', gap: 12,
                   }}>
-                    <div style={{ width: 3, height: 32, borderRadius: 2, background: ['#e8ff3c','#3cffb0','#ff6b6b','#6bb3ff','#ff9f3c','#c46bff'][i % 6], flexShrink: 0 }} />
+                    <div style={{ width: 3, height: 32, borderRadius: 2, background: trackColors[i % trackColors.length], flexShrink: 0 }} />
                     <div style={{ flex: 1 }}>
                       <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 13 }}>{t.nome}</div>
                       <div style={{ fontSize: 11, color: 'var(--text3)' }}>Trilha {i + 1}</div>
                     </div>
                     <button onClick={() => deletarTrilha(t.id, t.url)} style={{
-                      background: 'none', color: 'var(--text3)', fontSize: 16, padding: 4,
-                      transition: 'color 0.15s',
+                      background: 'none', color: 'var(--text3)', fontSize: 16, padding: 4, transition: 'color 0.15s',
                     }}
                       onMouseEnter={e => e.currentTarget.style.color = 'var(--danger)'}
                       onMouseLeave={e => e.currentTarget.style.color = 'var(--text3)'}
