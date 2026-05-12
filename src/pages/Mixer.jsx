@@ -183,7 +183,7 @@ export default function Mixer({ session }) {
     // PitchShift global com parâmetros otimizados
     const pitchNode = new Tone.PitchShift({
       pitch: pitchRef.current,
-      windowSize: 0.03,
+      windowSize: 0.01,
       delayTime: 0,
       feedback: 0,
       wet: 1,
