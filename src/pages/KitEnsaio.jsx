@@ -3,15 +3,11 @@
 ANTES DE USAR ESTE ARQUIVO
 ===========================================
 
-1. Rode no terminal:
+1. No package.json adicione:
 
-npm install tone
+"tone": "^14.8.49"
 
-2. Depois faça:
-
-git add .
-git commit -m "fix pitch shift"
-git push
+2. Commit no GitHub.
 
 ===========================================
 */
@@ -176,10 +172,18 @@ export default function KitEnsaio({
     const pitchShift =
       new Tone.PitchShift({
         pitch: 0,
-        windowSize: 0.1,
+
+        // REDUZ DISTORÇÃO / DUPLICAÇÃO
+        windowSize: 0.03,
+
         delayTime: 0,
+
         feedback: 0,
       })
+
+    // REMOVE SOM ORIGINAL
+    // evitando chorus / duplicação
+    pitchShift.wet.value = 1
 
     const volumeNode =
       new Tone.Volume(0)
