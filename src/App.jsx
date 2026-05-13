@@ -1,0 +1,56 @@
+import React, { useState, useEffect } from 'react'
+import { Routes, Route, Navigate } from 'react-router-dom'
+import { supabase } from './lib/supabase'
+import Login from './pages/Login'
+import Catalogo from './pages/Catalogo'
+import Perfil from './pages/Perfil'
+import EscolhaModo from './pages/EscolhaModo'
+import Mixer from './pages/Mixer'
+import KitEnsaio from './pages/KitEnsaio'
+import Admin from './pages/Admin'
+import PlaylistForm from './pages/PlaylistForm'
+import PlaylistDetalhe from './pages/PlaylistDetalhe'
+import PlaylistAdicionar from './pages/PlaylistAdicionar'
+
+const ADMIN_EMAIL = 'danielsantosmeloalves@gmail.com'
+
+export default function App() {
+  const [session, setSession] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      setLoading(false)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  if (loading) return (
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh' }}>
+      <div style={{ color:'var(--accent)', fontFamily:'var(--font-display)', fontSize:28, letterSpacing:4 }}>MIXSTAGE</div>
+    </div>
+  )
+
+  const isAdmin = session?.user?.email === ADMIN_EMAIL
+
+  return (
+    <Routes>
+      <Route path="/login" element={!session ? <Login /> : <Navigate to="/" />} />
+      <Route path="/" element={session ? <Catalogo session={session} isAdmin={isAdmin} /> : <Navigate to="/login" />} />
+      <Route path="/perfil" element={session ? <Perfil session={session} /> : <Navigate to="/login" />} />
+      <Route path="/escolha/:id" element={session ? <EscolhaModo session={session} /> : <Navigate to="/login" />} />
+      <Route path="/mixer/:id" element={session ? <Mixer session={session} /> : <Navigate to="/login" />} />
+      <Route path="/kit/:id" element={session ? <KitEnsaio session={session} /> : <Navigate to="/login" />} />
+      <Route path="/admin" element={session && isAdmin ? <Admin session={session} /> : <Navigate to="/login" />} />
+      <Route path="/playlist/nova" element={session ? <PlaylistForm session={session} /> : <Navigate to="/login" />} />
+      <Route path="/playlist/:id/editar" element={session ? <PlaylistForm session={session} /> : <Navigate to="/login" />} />
+      <Route path="/playlist/:id" element={session ? <PlaylistDetalhe session={session} /> : <Navigate to="/login" />} />
+      <Route path="/playlist/:id/adicionar" element={session ? <PlaylistAdicionar session={session} /> : <Navigate to="/login" />} />
+      <Route path="*" element={<Navigate to={session ? "/" : "/login"} />} />
+    </Routes>
+  )
+}
