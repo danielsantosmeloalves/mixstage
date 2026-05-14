@@ -20,15 +20,27 @@ export default function Catalogo({ session, isAdmin }) {
       const [perfilRes, minhasRes, compartiRes, musicasRes] = await Promise.all([
         supabase.from('perfis').select('*').eq('id', session.user.id).single(),
         supabase.from('playlists').select('*').eq('user_id', session.user.id).order('criado_em', { ascending: false }),
-        supabase.from('playlists').select('*, perfil:perfis(nome_completo)').eq('privada', false),
+        supabase.from('playlists').select('*').eq('privada', false),
         supabase.from('musicas').select('*').order('titulo'),
       ])
 
       if (!perfilRes.data) { navigate('/perfil'); return }
       setPerfil(perfilRes.data)
       setMinhasPlaylists(minhasRes.data || [])
-      console.log('Compartilhadas raw:', compartiRes.data, compartiRes.error)
-      setPlaylistsCompartilhadas(compartiRes.data || [])
+
+      // Busca perfis dos donos das playlists compartilhadas separadamente
+      const playlists = compartiRes.data || []
+      if (playlists.length > 0) {
+        const userIds = [...new Set(playlists.map(p => p.user_id))]
+        const { data: perfisData } = await supabase.from('perfis').select('id, nome_completo').in('id', userIds)
+        const perfisMap = {}
+        if (perfisData) perfisData.forEach(p => { perfisMap[p.id] = p })
+        const playlistsComPerfil = playlists.map(pl => ({ ...pl, perfil: perfisMap[pl.user_id] || null }))
+        setPlaylistsCompartilhadas(playlistsComPerfil)
+      } else {
+        setPlaylistsCompartilhadas([])
+      }
+
       setMusicas(musicasRes.data || [])
       setCarregando(false)
     }
