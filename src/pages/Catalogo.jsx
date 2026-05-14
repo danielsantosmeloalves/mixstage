@@ -20,7 +20,7 @@ export default function Catalogo({ session, isAdmin }) {
       const [perfilRes, minhasRes, compartiRes, musicasRes] = await Promise.all([
         supabase.from('perfis').select('*').eq('id', session.user.id).single(),
         supabase.from('playlists').select('*').eq('user_id', session.user.id).order('criado_em', { ascending: false }),
-        supabase.from('playlists').select('*, perfil:perfis(nome_completo)').eq('privada', false).order('criado_em', { ascending: false }),
+        supabase.from('playlists').select('*, perfil:perfis(nome_completo)').eq('privada', false),
         supabase.from('musicas').select('*').order('titulo'),
       ])
 
