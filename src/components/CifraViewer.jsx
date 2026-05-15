@@ -5,14 +5,19 @@ export default function CifraViewer({ cifras, tomAtual, tomOriginal }) {
 
   function encontrarCifra() {
     if (!cifras || Object.keys(cifras).length === 0) return null
+    // Tenta tom atual, depois original, depois qualquer um
     if (tomAtual && cifras[tomAtual]) return { tom: tomAtual, ...cifras[tomAtual] }
     if (tomOriginal && cifras[tomOriginal]) return { tom: tomOriginal, ...cifras[tomOriginal] }
     const primeiraTom = Object.keys(cifras)[0]
-    return { tom: primeiraTom, ...cifras[primeiraTom] }
+    if (primeiraTom) return { tom: primeiraTom, ...cifras[primeiraTom] }
+    return null
   }
 
   const cifra = encontrarCifra()
+
+  // Mostra mesmo se só tiver PDF (sem texto)
   if (!cifra) return null
+  if (!cifra.conteudo && !cifra.pdf_url) return null
 
   const temTexto = !!cifra.conteudo
   const temPdf = !!cifra.pdf_url
@@ -35,7 +40,7 @@ export default function CifraViewer({ cifras, tomAtual, tomOriginal }) {
       </button>
 
       {aberta && (
-        <div style={{ marginTop:4, background:'var(--bg3)', border:'1px solid var(--border)', borderRadius:'var(--radius)', padding:16, display:'flex', flexDirection:'column', gap:10 }}>
+        <div style={{ marginTop:4, background:'var(--bg3)', border:'1px solid var(--border)', borderRadius:'var(--radius)', padding:16, display:'flex', flexDirection:'column', gap:12 }}>
 
           {/* Texto */}
           {temTexto && (
