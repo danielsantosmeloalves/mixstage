@@ -218,7 +218,11 @@ export default function Admin() {
 
   async function salvarCifra(e) {
     e.preventDefault()
-    if (!cifrasTom || (!cifraTexto.trim() && !cifraPdf) || !musicaSelecionada) return
+    if (!cifrasTom || !musicaSelecionada) return
+    if (!cifraTexto.trim() && !cifraPdf && !cifras[cifrasTom]?.pdf_url) {
+      setMsgCifra('Adicione um texto ou um PDF.')
+      return
+    }
     setSalvandoCifra(true); setMsgCifra('')
 
     // Upload PDF se houver
@@ -491,8 +495,9 @@ export default function Admin() {
                           <div key={tom} style={{ display:'flex', alignItems:'center', gap:8, background:'var(--bg3)', borderRadius:'var(--radius)', padding:'10px 14px' }}>
                             <span style={{ fontSize:11, fontWeight:700, background:'rgba(232,255,60,0.15)', color:'var(--accent)', border:'1px solid rgba(232,255,60,0.3)', borderRadius:4, padding:'2px 8px' }}>{tom}</span>
                             <div style={{ flex:1, display:'flex', gap:6 }}>
-                              {cifras[tom].conteudo && <span style={{ fontSize:10, color:'var(--text3)', background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:3, padding:'1px 6px' }}>📝 texto</span>}
-                              {cifras[tom].pdf_url && <span style={{ fontSize:10, color:'var(--text3)', background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:3, padding:'1px 6px' }}>📄 PDF</span>}
+                              {cifras[tom]?.conteudo && <span style={{ fontSize:10, color:'var(--text3)', background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:3, padding:'1px 6px' }}>📝 texto</span>}
+                              {cifras[tom]?.pdf_url && <span style={{ fontSize:10, color:'var(--success)', background:'rgba(60,255,143,0.1)', border:'1px solid rgba(60,255,143,0.3)', borderRadius:3, padding:'1px 6px' }}>📄 PDF</span>}
+                              {!cifras[tom]?.conteudo && !cifras[tom]?.pdf_url && <span style={{ fontSize:10, color:'var(--danger)' }}>vazio</span>}
                             </div>
                             <button onClick={() => iniciarEdicaoCifra(tom)} style={{ background:'none', color:'var(--accent)', fontSize:12, cursor:'pointer', border:'1px solid rgba(232,255,60,0.3)', borderRadius:'var(--radius)', padding:'3px 8px' }}>editar</button>
                             <button onClick={() => deletarCifra(tom)} style={{ background:'none', color:'var(--text3)', fontSize:14, padding:4, cursor:'pointer', border:'none' }} onMouseEnter={e => e.currentTarget.style.color='var(--danger)'} onMouseLeave={e => e.currentTarget.style.color='var(--text3)'}>✕</button>
