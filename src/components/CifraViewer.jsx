@@ -48,18 +48,18 @@ export default function CifraViewer({ cifras, tomAtual, tomOriginal }) {
           {temPdf && (
             <a
               href={cifra.pdf_url}
-              download
               target="_blank"
               rel="noreferrer"
               style={{
-                display:'flex', alignItems:'center', justifyContent:'center', gap:8,
-                padding:'10px 16px', borderRadius:'var(--radius)',
-                background:'var(--accent)', color:'#000',
-                fontSize:13, fontWeight:700, textDecoration:'none',
-                fontFamily:'var(--font-display)', letterSpacing:1,
+                display:'flex', alignItems:'center', justifyContent:'center', gap:10,
+                padding:'16px 0', borderRadius:'var(--radius)',
+                background:'#ffffff', color:'#000000',
+                fontSize:16, fontWeight:800, textDecoration:'none',
+                fontFamily:'var(--font-display)', letterSpacing:2,
+                boxShadow:'0 2px 12px rgba(255,255,255,0.15)',
               }}
             >
-              📄 Baixar cifra em PDF
+              📄 DOWNLOAD PDF
             </a>
           )}
         </div>
