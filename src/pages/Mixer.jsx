@@ -97,7 +97,17 @@ export default function Mixer({ session }) {
 
       const todas = new Set(lista.map((_, i) => i))
       if (IS_MOBILE && todas.size > LIMITE_MOBILE) {
-        setSelecionadas(new Set([...todas].slice(0, LIMITE_MOBILE)))
+        const PRIORITARIAS = ['click', 'guia', 'piano', 'violao', 'violão', 'bass', 'baixo', 'teclas', 'teclado', 'drum', 'drums', 'bateria', 'gtr', 'guitarra']
+        const indicesPrioritarios = lista
+          .map((tr, i) => ({ i, nome: tr.nome?.toLowerCase() || '' }))
+          .filter(({ nome }) => PRIORITARIAS.some(p => nome.includes(p)))
+          .map(({ i }) => i)
+        const selecionadasFinal = new Set(indicesPrioritarios.slice(0, LIMITE_MOBILE))
+        // Preenche restante até o limite com outras trilhas
+        for (let i = 0; i < lista.length && selecionadasFinal.size < LIMITE_MOBILE; i++) {
+          if (!selecionadasFinal.has(i)) selecionadasFinal.add(i)
+        }
+        setSelecionadas(selecionadasFinal)
       } else {
         setSelecionadas(todas)
       }
