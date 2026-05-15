@@ -46,13 +46,13 @@ export default function Mixer({ session }) {
   const [playing, setPlaying] = useState(false)
   const [tempos, setTempos] = useState({ atual: 0, total: 0 })
   const [erro, setErro] = useState('')
+  const [progressoDecodificacao, setProgressoDecodificacao] = useState(0)
   const [pitch, setPitch] = useState(0)
   const [tfSalvo, setTfSalvo] = useState(null)
   const [salvandoTf, setSalvandoTf] = useState(false)
   const [tfMsg, setTfMsg] = useState('')
 
   const playersRef = useRef([])
-  const rawBuffersRef = useRef([])  // ArrayBuffers brutos — menor RAM que AudioBuffers
   const pitchNodeRef = useRef(null)
   const gainNodesRef = useRef([])
   const masterVolRef = useRef(null)
@@ -67,7 +67,6 @@ export default function Mixer({ session }) {
   const pitchRef = useRef(0)
   const trilhasRef = useRef([])
   const loopRef = useRef(null)
-  const decodificadoRef = useRef(false)
 
   useEffect(() => {
     async function carregar() {
@@ -183,46 +182,13 @@ export default function Mixer({ session }) {
     if (prontoRef.current) return
     setPrecarregando(true); setErro('')
 
-    const lista = trilhasRef.current
-    const selecionadasArr = [...selecionadas].sort((a, b) => a - b)
-    const raws = new Array(lista.length).fill(null)
-
-    // FASE 1: Baixa como ArrayBuffer bruto — usa muito menos RAM que AudioBuffer
-    for (let idx = 0; idx < selecionadasArr.length; idx++) {
-      const i = selecionadasArr[idx]
-      setTrilhaAtual(idx)
-      try {
-        const res = await fetch(lista[i].url)
-        if (!res.ok) throw new Error('HTTP ' + res.status)
-        raws[i] = await res.arrayBuffer()
-        await new Promise(r => setTimeout(r, 20))
-      } catch(e) { console.warn('Erro trilha', i, e) }
-    }
-
-    const validos = raws.filter(Boolean)
-    if (validos.length === 0) {
-      setErro('Não foi possível carregar as trilhas.')
-      setPrecarregando(false)
-      return
-    }
-
-    rawBuffersRef.current = raws
-    decodificadoRef.current = false
-    prontoRef.current = true
-    setPronto(true)
-    setPrecarregando(false)
-  }
-
-  // FASE 2: Decodifica e cria players — chamado dentro do gesto do Play
-  async function decodificarEConfigurar() {
-    if (decodificadoRef.current) return true
-
     const audioEl = criarAudioSilencioso()
     try { await audioEl.play() } catch(e) {}
     await Tone.start()
     iniciarHeartbeat()
 
     const lista = trilhasRef.current
+    const selecionadasArr = [...selecionadas].sort((a, b) => a - b)
     const semitons = pitchRef.current
 
     const pitchNode = new Tone.PitchShift({
@@ -239,28 +205,29 @@ export default function Mixer({ session }) {
     const players = new Array(lista.length).fill(null)
     const gains = new Array(lista.length).fill(null)
 
-    for (let i = 0; i < rawBuffersRef.current.length; i++) {
-      const raw = rawBuffersRef.current[i]
-      if (!raw || !selecionadas.has(i)) continue
+    for (let idx = 0; idx < selecionadasArr.length; idx++) {
+      const i = selecionadasArr[idx]
+      setTrilhaAtual(idx)
       try {
         const gainNode = new Tone.Volume(0)
         const excluir = deveExcluirPitch(lista[i].nome)
         gainNode.connect(excluir ? masterVol : pitchNode)
-
-        // Cria player a partir do ArrayBuffer — decodifica aqui
-        const player = new Tone.Player({ autostart: false })
-        const copy = raw.slice(0) // cópia pois decodeAudioData consome o original
-        const audioBuf = await Tone.context.decodeAudioData(copy)
-        player.buffer = new Tone.ToneAudioBuffer(audioBuf)
+        const player = new Tone.Player({ url: lista[i].url, autostart: false })
         player.connect(gainNode)
-
         players[i] = player
         gains[i] = gainNode
-      } catch(e) { console.warn('Erro decodificar trilha', i, e) }
+        await new Promise(r => setTimeout(r, 30))
+      } catch(e) { console.warn('Erro trilha', i, e) }
     }
 
+    await Tone.loaded()
+
     const duracoes = players.filter(Boolean).map(p => p.buffer?.duration || 0)
-    if (duracoes.length === 0) return false
+    if (duracoes.length === 0) {
+      setErro('Não foi possível carregar as trilhas.')
+      setPrecarregando(false)
+      return
+    }
 
     maxDurRef.current = Math.max(...duracoes)
     playersRef.current = players
@@ -271,12 +238,10 @@ export default function Mixer({ session }) {
       if (gains[i]) gains[i].volume.value = tr.muted ? -Infinity : Tone.gainToDb(tr.vol <= 0 ? 0.0001 : tr.vol)
     })
 
-    // Libera ArrayBuffers da memória após decodificar
-    rawBuffersRef.current = rawBuffersRef.current.map(() => null)
-
     setupMediaSession()
-    decodificadoRef.current = true
-    return true
+    prontoRef.current = true
+    setPronto(true)
+    setPrecarregando(false)
   }
 
   function iniciarTick() {
@@ -299,20 +264,12 @@ export default function Mixer({ session }) {
 
   async function togglePlay() {
     if (Tone.context.state === 'suspended') await Tone.context.resume()
-
     if (playingRef.current) {
       offsetRef.current = Tone.now() - startedAtRef.current
       playersRef.current.forEach(p => { try { p?.stop() } catch(e){} })
       playingRef.current = false; setPlaying(false)
       if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused'
     } else {
-      // Decodifica no primeiro Play (dentro do gesto do usuário — iOS safe)
-      if (!decodificadoRef.current) {
-        setPrecarregando(true)
-        const ok = await decodificarEConfigurar()
-        setPrecarregando(false)
-        if (!ok) { setErro('Erro ao preparar áudio.'); return }
-      }
       const offset = offsetRef.current
       playersRef.current.forEach((p, i) => {
         if (!p || !selecionadas.has(i)) return
@@ -472,22 +429,11 @@ export default function Mixer({ session }) {
         {/* Carregando */}
         {precarregando && (
           <div className="fade-in" style={{ background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:'var(--radius-lg)', padding:'32px 24px', textAlign:'center' }}>
-            <div style={{ fontFamily:'var(--font-display)', fontWeight:700, fontSize:16, marginBottom:8 }}>
-              {pronto ? 'Preparando áudio...' : 'Baixando trilhas...'}
+            <div style={{ fontFamily:'var(--font-display)', fontWeight:700, fontSize:16, marginBottom:8 }}>Carregando trilhas...</div>
+            <div style={{ color:'var(--text2)', fontSize:13, marginBottom:20 }}>{trilhaAtual+1} de {selecionadas.size} — {trilhasRef.current[[...selecionadas].sort((a,b)=>a-b)[trilhaAtual]]?.nome}</div>
+            <div style={{ height:6, background:'var(--bg3)', borderRadius:3, overflow:'hidden', marginBottom:20, maxWidth:300, margin:'0 auto 20px' }}>
+              <div style={{ height:'100%', background:'var(--accent)', borderRadius:3, width:`${Math.round((trilhaAtual/selecionadas.size)*100)}%`, transition:'width 0.3s' }} />
             </div>
-            {!pronto && (
-              <>
-                <div style={{ color:'var(--text2)', fontSize:13, marginBottom:20 }}>{trilhaAtual+1} de {selecionadas.size} — {trilhasRef.current[[...selecionadas].sort((a,b)=>a-b)[trilhaAtual]]?.nome}</div>
-                <div style={{ height:6, background:'var(--bg3)', borderRadius:3, overflow:'hidden', marginBottom:20, maxWidth:300, margin:'0 auto 20px' }}>
-                  <div style={{ height:'100%', background:'var(--accent)', borderRadius:3, width:`${Math.round((trilhaAtual/selecionadas.size)*100)}%`, transition:'width 0.3s' }} />
-                </div>
-              </>
-            )}
-            {pronto && (
-              <div style={{ height:6, background:'var(--bg3)', borderRadius:3, overflow:'hidden', maxWidth:300, margin:'0 auto' }}>
-                <div style={{ height:'100%', background:'var(--accent)', borderRadius:3, width:'70%', animation:'pulse 1s ease-in-out infinite' }} />
-              </div>
-            )}
           </div>
         )}
 
