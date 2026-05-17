@@ -48,6 +48,7 @@ export default function Mixer({ session }) {
   const [erro, setErro] = useState('')
   const [progressoDecodificacao, setProgressoDecodificacao] = useState(0)
   const [pitch, setPitch] = useState(0)
+  const [stereoSplit, setStereoSplit] = useState(false)
   const [tfSalvo, setTfSalvo] = useState(null)
   const [salvandoTf, setSalvandoTf] = useState(false)
   const [tfMsg, setTfMsg] = useState('')
@@ -55,6 +56,7 @@ export default function Mixer({ session }) {
   const playersRef = useRef([])
   const pitchNodeRef = useRef(null)
   const gainNodesRef = useRef([])
+  const panNodesRef = useRef([])
   const masterVolRef = useRef(null)
   const audioElRef = useRef(null)
   const heartbeatRef = useRef(null)
@@ -214,21 +216,36 @@ export default function Mixer({ session }) {
 
     const players = new Array(lista.length).fill(null)
     const gains = new Array(lista.length).fill(null)
+    const pans = new Array(lista.length).fill(null)
+
+    const CLICK_GUIA = ['click', 'clique', 'guia', 'guide']
+    function ehClickGuia(nome) {
+      if (!nome) return false
+      return CLICK_GUIA.some(p => nome.toLowerCase().includes(p))
+    }
 
     for (let idx = 0; idx < selecionadasArr.length; idx++) {
       const i = selecionadasArr[idx]
       setTrilhaAtual(idx)
       try {
         const gainNode = new Tone.Volume(0)
+        const panNode = new Tone.Panner(0) // centro por padrão
         const excluir = deveExcluirPitch(lista[i].nome)
-        gainNode.connect(excluir ? masterVol : pitchNode)
+
+        // Cadeia: gain → pan → pitch/master
+        gainNode.connect(panNode)
+        panNode.connect(excluir ? masterVol : pitchNode)
+
         const player = new Tone.Player({ url: lista[i].url, autostart: false })
         player.connect(gainNode)
         players[i] = player
         gains[i] = gainNode
+        pans[i] = panNode
         await new Promise(r => setTimeout(r, 30))
       } catch(e) { console.warn('Erro trilha', i, e) }
     }
+
+    panNodesRef.current = pans
 
     await Tone.loaded()
 
@@ -322,6 +339,23 @@ export default function Mixer({ session }) {
       pitchNodeRef.current.pitch = s
       pitchNodeRef.current.windowSize = s < 0 ? 0.1 : 0.03
     }
+  }
+
+  function toggleStereo() {
+    const CLICK_GUIA = ['click', 'clique', 'guia', 'guide']
+    const novoEstado = !stereoSplit
+    setStereoSplit(novoEstado)
+    const lista = trilhasRef.current
+    panNodesRef.current.forEach((pan, i) => {
+      if (!pan) return
+      const nome = lista[i]?.nome || ''
+      const ehEsquerda = CLICK_GUIA.some(p => nome.toLowerCase().includes(p))
+      if (novoEstado) {
+        pan.pan.value = ehEsquerda ? -1 : 1
+      } else {
+        pan.pan.value = 0
+      }
+    })
   }
 
   function applyGainTrilha(idx, lista) {
@@ -477,6 +511,19 @@ export default function Mixer({ session }) {
                 <button onClick={() => pular(5)} title="+5 segundos" style={{ width:36, height:36, borderRadius:'var(--radius)', background:'var(--bg3)', border:'1px solid var(--border)', color:'var(--text2)', fontSize:11, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontFamily:'var(--font-mono)' }}>+5s</button>
 
                 <div style={{ flex:1 }} />
+
+                {/* Botão Stereo Split */}
+                <button onClick={toggleStereo} title={stereoSplit ? 'Desativar separação L/R' : 'Click/Guia → Esquerda | Instrumentos → Direita'} style={{
+                  padding:'6px 12px', borderRadius:'var(--radius)',
+                  background: stereoSplit ? 'rgba(107,179,255,0.2)' : 'var(--bg3)',
+                  color: stereoSplit ? '#6bb3ff' : 'var(--text2)',
+                  border: `1px solid ${stereoSplit ? 'rgba(107,179,255,0.5)' : 'var(--border)'}`,
+                  fontSize:11, cursor:'pointer', fontFamily:'var(--font-mono)',
+                  display:'flex', alignItems:'center', gap:6, flexShrink:0,
+                }}>
+                  <span>🎧</span>
+                  <span>{stereoSplit ? 'L/R ON' : 'L/R'}</span>
+                </button>
               </div>
 
               {/* Pitch */}
