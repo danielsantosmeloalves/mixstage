@@ -47,6 +47,7 @@ export default function KitEnsaio({ session }) {
   const [salvandoTf, setSalvandoTf] = useState(false)
   const [tfMsg, setTfMsg] = useState('')
   const [erro, setErro] = useState('')
+  const [etapaCarregamento, setEtapaCarregamento] = useState('')
 
   const playerRef = useRef(null)
   const pitchShiftRef = useRef(null)
@@ -158,17 +159,30 @@ export default function KitEnsaio({ session }) {
     await criarAudio()
     iniciarHeartbeat()
 
-    if (pitchShiftRef.current) {
-      pitchShiftRef.current.windowSize = pitchSelecionado < 0 ? 0.1 : 0.03
-      pitchShiftRef.current.pitch = pitchSelecionado
-      setPitch(pitchSelecionado)
-      setPitchAplicado(pitchSelecionado)
-    }
+    // Pitch shift via VPS (Rubber Band) — qualidade profissional
+    pitchShiftRef.current.pitch = 0 // sem pitch shift no Tone.js
+    setPitch(pitchSelecionado)
+    setPitchAplicado(pitchSelecionado)
 
     try {
-      const url = kitDisponivel[tipoSelecionado].url
+      let urlParaTocar = kitDisponivel[tipoSelecionado].url
+
+      // Se pitch ≠ 0, processa na VPS
+      if (pitchSelecionado !== 0) {
+        setEtapaCarregamento('Processando tom na VPS...')
+        const response = await fetch('http://200.234.218.17/audio/pitch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: urlParaTocar, semitons: pitchSelecionado }),
+        })
+        if (!response.ok) throw new Error('Erro na VPS: ' + response.status)
+        const blob = await response.blob()
+        urlParaTocar = URL.createObjectURL(blob)
+        setEtapaCarregamento('Carregando áudio...')
+      }
+
       if (playerRef.current) playerRef.current.dispose()
-      const player = new Tone.Player({ url, autostart: false })
+      const player = new Tone.Player({ url: urlParaTocar, autostart: false })
       player.connect(pitchShiftRef.current)
       await Tone.loaded()
       durationRef.current = player.buffer.duration
@@ -377,9 +391,19 @@ export default function KitEnsaio({ session }) {
         {/* Carregando */}
         {precarregando && (
           <div className="fade-in" style={{ background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:'var(--radius-lg)', padding:'48px 24px', textAlign:'center' }}>
-            <div style={{ fontFamily:'var(--font-display)', fontWeight:700, fontSize:16, marginBottom:20 }}>Carregando...</div>
+            <div style={{ fontSize:32, marginBottom:16 }}>
+              {etapaCarregamento.includes('VPS') ? '⚙️' : '🎼'}
+            </div>
+            <div style={{ fontFamily:'var(--font-display)', fontWeight:700, fontSize:16, marginBottom:8 }}>
+              {etapaCarregamento || 'Carregando...'}
+            </div>
+            {etapaCarregamento.includes('VPS') && (
+              <div style={{ fontSize:12, color:'var(--text3)', marginBottom:16 }}>
+                Processando pitch shift com qualidade profissional...
+              </div>
+            )}
             <div style={{ height:6, background:'var(--bg3)', borderRadius:3, overflow:'hidden', maxWidth:240, margin:'0 auto' }}>
-              <div style={{ height:'100%', background:'var(--accent)', borderRadius:3, width:'60%' }} />
+              <div style={{ height:'100%', background:'var(--accent)', borderRadius:3, width:'60%', transition:'width 0.4s' }} />
             </div>
           </div>
         )}
